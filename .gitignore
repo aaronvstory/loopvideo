@@ -1,0 +1,32 @@
+# Build outputs and logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# FFmpeg temp files
+ffmpeg_*.tmp
+
+# Windows specific
+Thumbs.db
+Desktop.ini
+
+# Archive files (but keep test files)
+*.zip
+!**/test*.zip
+
+# IDE and editor files
+.vscode/
+.vs/
+*.swp
+*.swo
+*~
+
+# PowerShell specific
+*.ps1.bak
+
+# Output videos (keep only test examples)
+*-looped.*
+!test-looped.mp4
