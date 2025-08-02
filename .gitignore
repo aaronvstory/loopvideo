@@ -1,3 +1,10 @@
+# Development and personal files
+CLAUDE.md
+CHANGELOG.md
+.github/
+.claude/
+*.md.bak
+
 # Build outputs and logs
 *.log
 
@@ -13,9 +20,8 @@ ffmpeg_*.tmp
 Thumbs.db
 Desktop.ini
 
-# Archive files (but keep test files)
+# Archive files
 *.zip
-!**/test*.zip
 
 # IDE and editor files
 .vscode/
@@ -27,6 +33,6 @@ Desktop.ini
 # PowerShell specific
 *.ps1.bak
 
-# Output videos (keep only test examples)
+# Output videos (user-generated)
 *-looped.*
 !test-looped.mp4
