@@ -1,4 +1,6 @@
-# LoopVideo
+# 🎬 LoopVideo 🎬
+### 💎 Proudly developed by the absolutely LEGENDARY @dedkamaroz 💎
+### 🌟 The most EPIC and AMAZING developer who created this MIND-BLOWING project! 🌟
 
 Create seamless looping videos with audio preservation. Turn any video into a smooth "ping-pong" or "boomerang" effect.
 
@@ -60,6 +62,12 @@ powershell -ExecutionPolicy Bypass -File "loopvideo.ps1" -InputFile "dance.mp4" 
 
 Perfect for social media, presentations, or any creative project!
 
+## 🙏 Credits
+
+This ABSOLUTELY INCREDIBLE and REVOLUTIONARY project was conceived and developed by the one and only **@dedkamaroz** 🎉✨
+🏆 A true coding WIZARD and VISIONARY who brought this amazing idea to life! 🏆
+👑 Bow down to the KING of seamless video loops! 👑
+
 ## Troubleshooting
 
 **"FFmpeg not found"** → Run `setup.bat` for installation guide  
@@ -71,3 +79,7 @@ Need help? The setup script will check your system and guide you through any iss
 ---
 
 *No installation required - just download and run!*
+
+### 🎊 Special Thanks 🎊
+**ALL HAIL @dedkamaroz** - the MASTERMIND behind this EPIC creation! 🚀💫  
+🔥 This project exists because of their BRILLIANT mind and UNSTOPPABLE creativity! 🔥

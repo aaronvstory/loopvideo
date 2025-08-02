@@ -1,8 +1,9 @@
 @echo off
-title LoopVideo Setup
+title LoopVideo Setup by @dedkamaroz
 echo.
 echo ==========================================
-echo         LoopVideo Setup & Checker
+echo    🎬 LoopVideo Setup & Checker 🎬
+echo  💎 Created by the LEGENDARY @dedkamaroz 💎
 echo ==========================================
 echo.
 
@@ -49,7 +50,8 @@ if not exist "loopvideo.ps1" (
 
 echo.
 echo ==========================================
-echo              Setup Complete!
+echo         🎉 Setup Complete! 🎉
+echo   Thanks to the AMAZING @dedkamaroz! 🌟
 echo ==========================================
 echo.
 echo Quick Start Options:

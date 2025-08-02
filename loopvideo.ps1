@@ -1,11 +1,14 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Creates a seamless looping video by concatenating original + time-reversed video
+    🎬 LoopVideo - Epic Seamless Video Loop Creator 🎬
+    💎 Proudly developed by the legendary @dedkamaroz 💎
 
 .DESCRIPTION
     Takes an input video file and creates a "ping-pong" or "boomerang" effect by adding
     a time-reversed copy to the end, creating a seamless loop without jarring cuts.
+    
+    🌟 Crafted with passion by the incredible @dedkamaroz - a true visionary! 🌟
 
     USAGE MODES:
     1. Drag & Drop: Drag a video file onto this script
@@ -354,7 +357,7 @@ File sizes:
 function Show-GUI {
     # Create main form with dark theme
     $script:form = New-Object System.Windows.Forms.Form
-    $script:form.Text = "Video Loop Creator"
+    $script:form.Text = "🎬 LoopVideo by @dedkamaroz 💎"
     $script:form.Size = New-Object System.Drawing.Size(780, 580)
     $script:form.StartPosition = "CenterScreen"
     $script:form.FormBorderStyle = "FixedDialog"
@@ -365,11 +368,11 @@ function Show-GUI {
 
     # Title label
     $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = "SEAMLESS VIDEO LOOP CREATOR"
+    $titleLabel.Text = "🎬 EPIC SEAMLESS VIDEO LOOP CREATOR 🎬`n💎 Masterfully crafted by @dedkamaroz 💎"
     $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
     $titleLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 220, 220)
     $titleLabel.Location = New-Object System.Drawing.Point(30, 20)
-    $titleLabel.Size = New-Object System.Drawing.Size(720, 35)
+    $titleLabel.Size = New-Object System.Drawing.Size(720, 60)
     $titleLabel.TextAlign = "MiddleCenter"
     $titleLabel.BackColor = [System.Drawing.Color]::Transparent
     $script:form.Controls.Add($titleLabel)
@@ -379,7 +382,7 @@ function Show-GUI {
     $instructionsLabel.Text = "Choose your video file using any of the methods below:"
     $instructionsLabel.Font = New-Object System.Drawing.Font("Segoe UI", 11)
     $instructionsLabel.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
-    $instructionsLabel.Location = New-Object System.Drawing.Point(30, 65)
+    $instructionsLabel.Location = New-Object System.Drawing.Point(30, 90)
     $instructionsLabel.Size = New-Object System.Drawing.Size(720, 25)
     $instructionsLabel.TextAlign = "MiddleCenter"
     $instructionsLabel.BackColor = [System.Drawing.Color]::Transparent
@@ -387,7 +390,7 @@ function Show-GUI {
 
     # Drag and drop area
     $dropPanel = New-Object System.Windows.Forms.Panel
-    $dropPanel.Location = New-Object System.Drawing.Point(30, 100)
+    $dropPanel.Location = New-Object System.Drawing.Point(30, 125)
     $dropPanel.Size = New-Object System.Drawing.Size(720, 120)
     $dropPanel.BorderStyle = "FixedSingle"
     $dropPanel.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 65)
@@ -613,8 +616,9 @@ function Process-VideoFromGUI {
 }
 
 # Main execution logic
-Write-ColorOutput "[FFMPEG SEAMLESS LOOP VIDEO CREATOR]" $Cyan
-Write-ColorOutput "=======================================" $Cyan
+Write-ColorOutput "🎬 LOOPVIDEO - EPIC SEAMLESS LOOP CREATOR 🎬" $Cyan
+Write-ColorOutput "💎 Masterfully crafted by @dedkamaroz 💎" $Magenta
+Write-ColorOutput "=============================================" $Cyan
 
 # Check if FFmpeg is available
 Write-ColorOutput "[INFO] Checking FFmpeg availability..." $Blue
