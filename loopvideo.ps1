@@ -2,13 +2,11 @@
 <#
 .SYNOPSIS
     🎬 LoopVideo - Epic Seamless Video Loop Creator 🎬
-    💎 Proudly developed by the legendary @dedkamaroz 💎
 
 .DESCRIPTION
     Takes an input video file and creates a "ping-pong" or "boomerang" effect by adding
     a time-reversed copy to the end, creating a seamless loop without jarring cuts.
-    
-    🌟 Crafted with passion by the incredible @dedkamaroz - a true visionary! 🌟
+
 
     USAGE MODES:
     1. Drag & Drop: Drag a video file onto this script
@@ -74,7 +72,9 @@ $script:form = $null
 $script:progressBar = $null
 $script:statusLabel = $null
 $script:processAnother = $false
-$script:disableDialoguesCheckbox = $null
+$script:showDialoguesCheckbox = $null
+$script:includeAudioCheckbox = $null
+$script:overwriteFilesCheckbox = $null
 
 function Write-ColorOutput {
     param([string]$Message, [string]$Color)
@@ -156,12 +156,45 @@ function Update-GUIProgress {
     }
 }
 
+function Get-UniqueOutputPath {
+    param([string]$BasePath)
+
+    if (-not (Test-Path $BasePath)) {
+        return $BasePath
+    }
+
+    $directory = [System.IO.Path]::GetDirectoryName($BasePath)
+    $nameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($BasePath)
+    $extension = [System.IO.Path]::GetExtension($BasePath)
+
+    # Check if the name already ends with -looped or -looped(n)
+    if ($nameWithoutExt -match "^(.+)-looped(\((\d+)\))?$") {
+        $baseName = $matches[1]
+        $startIndex = if ($matches[3]) { [int]$matches[3] + 1 } else { 1 }
+    } else {
+        # This shouldn't happen in our case, but handle it anyway
+        $baseName = $nameWithoutExt
+        $startIndex = 1
+    }
+
+    $counter = $startIndex
+    do {
+        $newName = "$baseName-looped($counter)$extension"
+        $newPath = if ($directory) { Join-Path $directory $newName } else { $newName }
+        $counter++
+    } while (Test-Path $newPath)
+
+    return $newPath
+}
+
 function Process-VideoFile {
     param(
         [string]$InputPath,
         [string]$OutputPath = "",
         [string]$QualityPreset = "medium",
-        [bool]$IsGUIMode = $false
+        [bool]$IsGUIMode = $false,
+        [bool]$IncludeAudio = $false,
+        [bool]$OverwriteExisting = $true
     )
 
     try {
@@ -204,25 +237,22 @@ function Process-VideoFile {
             Write-ColorOutput "[INFO] Output file: $(Split-Path $OutputPath -Leaf)" $Blue
         }
 
-        # Check if output file already exists
+        # Check if output file already exists and handle overwrite logic
         if (Test-Path $OutputPath) {
-            if ($IsGUIMode) {
-                $result = [System.Windows.Forms.MessageBox]::Show(
-                    "Output file already exists:`n$(Split-Path $OutputPath -Leaf)`n`nOverwrite?",
-                    "File Exists",
-                    "YesNo",
-                    "Question"
-                )
-                if ($result -eq "No") {
-                    Update-GUIStatus "Operation cancelled by user" ([System.Drawing.Color]::FromArgb(255, 165, 0))
-                    return $false
+            if ($OverwriteExisting) {
+                # Overwrite enabled - proceed without asking
+                if ($IsGUIMode) {
+                    Update-GUIStatus "File exists - will overwrite: $(Split-Path $OutputPath -Leaf)" ([System.Drawing.Color]::FromArgb(255, 165, 0))
+                } else {
+                    Write-ColorOutput "[INFO] File exists - overwriting: $(Split-Path $OutputPath -Leaf)" $Yellow
                 }
             } else {
-                Write-ColorOutput "[WARNING] Output file already exists!" $Yellow
-                $overwrite = Read-Host "   Overwrite '$OutputPath'? (y/N)"
-                if ($overwrite.ToLower() -ne 'y') {
-                    Write-ColorOutput "Operation cancelled by user" $Yellow
-                    return $false
+                # Generate unique filename instead of overwriting
+                $OutputPath = Get-UniqueOutputPath $OutputPath
+                if ($IsGUIMode) {
+                    Update-GUIStatus "File exists - using unique name: $(Split-Path $OutputPath -Leaf)" ([System.Drawing.Color]::FromArgb(100, 150, 255))
+                } else {
+                    Write-ColorOutput "[INFO] File exists - using unique name: $(Split-Path $OutputPath -Leaf)" $Blue
                 }
             }
         }
@@ -244,21 +274,80 @@ function Process-VideoFile {
             }
         }
 
-        # Build FFmpeg command for lossless processing with audio preservation
-        $ffmpegArgs = @(
-            "-i", "`"$InputPath`"",
-            "-filter_complex", "[0:v]reverse[rv];[0:v][rv]concat=n=2:v=1:a=0[outv];[0:a]areverse[ra];[0:a][ra]concat=n=2:v=0:a=1[outa]",
-            "-map", "[outv]",
-            "-map", "[outa]",
-            "-c:v", "libx264",
-            "-preset", $QualityPreset,
-            "-crf", "18",  # High quality encoding (near lossless)
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-y",  # Overwrite output file
-            "`"$OutputPath`""
-        )
+        # Build FFmpeg command based on user preferences
+        if ($IsGUIMode) {
+            Update-GUIStatus "Building processing command..." ([System.Drawing.Color]::FromArgb(100, 150, 255))
+        }
+
+        if ($IncludeAudio) {
+            # Check if input actually has audio streams when audio is requested
+            $hasAudio = $false
+            try {
+                $audioCheck = & ffmpeg -i $InputPath -hide_banner -f null - 2>&1 | Select-String "Stream.*Audio"
+                $hasAudio = $null -ne $audioCheck
+            } catch {
+                $hasAudio = $false
+            }
+
+            if ($hasAudio) {
+                # Video and audio processing
+                $ffmpegArgs = @(
+                    "-i", "`"$InputPath`"",
+                    "-filter_complex", "[0:v]reverse[rv];[0:v][rv]concat=n=2:v=1:a=0[outv];[0:a]areverse[ra];[0:a][ra]concat=n=2:v=0:a=1[outa]",
+                    "-map", "[outv]",
+                    "-map", "[outa]",
+                    "-c:v", "libx264",
+                    "-preset", $QualityPreset,
+                    "-crf", "18",  # High quality encoding (near lossless)
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-y",  # Overwrite output file
+                    "`"$OutputPath`""
+                )
+                if ($IsGUIMode) {
+                    Update-GUIStatus "Processing with audio..." ([System.Drawing.Color]::FromArgb(100, 255, 100))
+                } else {
+                    Write-ColorOutput "[INFO] Processing with audio preserved" $Green
+                }
+            } else {
+                # No audio streams found, process video only
+                $ffmpegArgs = @(
+                    "-i", "`"$InputPath`"",
+                    "-filter_complex", "[0:v]reverse[rv];[0:v][rv]concat=n=2:v=1:a=0[outv]",
+                    "-map", "[outv]",
+                    "-c:v", "libx264",
+                    "-preset", $QualityPreset,
+                    "-crf", "18",  # High quality encoding (near lossless)
+                    "-pix_fmt", "yuv420p",
+                    "-y",  # Overwrite output file
+                    "`"$OutputPath`""
+                )
+                if ($IsGUIMode) {
+                    Update-GUIStatus "No audio streams found - processing video only..." ([System.Drawing.Color]::FromArgb(255, 165, 0))
+                } else {
+                    Write-ColorOutput "[WARNING] No audio streams found - processing video only" $Yellow
+                }
+            }
+        } else {
+            # Video only processing (audio disabled by user)
+            $ffmpegArgs = @(
+                "-i", "`"$InputPath`"",
+                "-filter_complex", "[0:v]reverse[rv];[0:v][rv]concat=n=2:v=1:a=0[outv]",
+                "-map", "[outv]",
+                "-c:v", "libx264",
+                "-preset", $QualityPreset,
+                "-crf", "18",  # High quality encoding (near lossless)
+                "-pix_fmt", "yuv420p",
+                "-y",  # Overwrite output file
+                "`"$OutputPath`""
+            )
+            if ($IsGUIMode) {
+                Update-GUIStatus "Processing video only (audio disabled)..." ([System.Drawing.Color]::FromArgb(100, 255, 100))
+            } else {
+                Write-ColorOutput "[INFO] Processing video only (audio disabled)" $Blue
+            }
+        }
 
         # Execute FFmpeg command
         if ($IsGUIMode) {
@@ -284,17 +373,17 @@ function Process-VideoFile {
             }
 
             if ($process.ExitCode -eq 0 -and (Test-Path $OutputPath)) {
-            # Show file size comparison
-            $inputSize = (Get-Item $InputPath).Length
-            $outputSize = (Get-Item $OutputPath).Length
-            $inputSizeMB = [math]::Round($inputSize / 1MB, 2)
-            $outputSizeMB = [math]::Round($outputSize / 1MB, 2)
+                # Show file size comparison
+                $inputSize = (Get-Item $InputPath).Length
+                $outputSize = (Get-Item $OutputPath).Length
+                $inputSizeMB = [math]::Round($inputSize / 1MB, 2)
+                $outputSizeMB = [math]::Round($outputSize / 1MB, 2)
 
-            if ($IsGUIMode) {
-                Update-GUIProgress 100
-                Update-GUIStatus "Success! Loop video created in $($stopwatch.Elapsed.TotalSeconds.ToString('F1'))s" ([System.Drawing.Color]::FromArgb(100, 255, 100))
+                if ($IsGUIMode) {
+                    Update-GUIProgress 100
+                    Update-GUIStatus "Success! Loop video created in $($stopwatch.Elapsed.TotalSeconds.ToString('F1'))s" ([System.Drawing.Color]::FromArgb(100, 255, 100))
 
-                $successMessage = @"
+                    $successMessage = @"
 Loop video created successfully!
 
 Output: $(Split-Path $OutputPath -Leaf)
@@ -305,17 +394,17 @@ File sizes:
 • Input: $inputSizeMB MB
 • Output: $outputSizeMB MB (~$([math]::Round($outputSizeMB / $inputSizeMB, 1))x larger)
 "@
-                if ($script:disableDialoguesCheckbox -and $script:disableDialoguesCheckbox.Checked) {
-                    [System.Windows.Forms.MessageBox]::Show($successMessage, "Success!", "OK", "Information")
+                    if ($script:showDialoguesCheckbox -and $script:showDialoguesCheckbox.Checked) {
+                        [System.Windows.Forms.MessageBox]::Show($successMessage, "Success!", "OK", "Information")
+                    }
+                } else {
+                    Write-ColorOutput "[SUCCESS] Loop video created successfully!" $Green
+                    Write-ColorOutput "[OUTPUT] $OutputPath" $Green
+                    Write-ColorOutput "[TIME] Processing time: $($stopwatch.Elapsed.TotalSeconds.ToString('F1')) seconds" $Blue
+                    Write-ColorOutput "[STATS] File sizes:" $Blue
+                    Write-ColorOutput "   Input:  $inputSizeMB MB" $Blue
+                    Write-ColorOutput "   Output: $outputSizeMB MB (~$([math]::Round($outputSizeMB / $inputSizeMB, 1))x larger)" $Blue
                 }
-            } else {
-                Write-ColorOutput "[SUCCESS] Loop video created successfully!" $Green
-                Write-ColorOutput "[OUTPUT] $OutputPath" $Green
-                Write-ColorOutput "[TIME] Processing time: $($stopwatch.Elapsed.TotalSeconds.ToString('F1')) seconds" $Blue
-                Write-ColorOutput "[STATS] File sizes:" $Blue
-                Write-ColorOutput "   Input:  $inputSizeMB MB" $Blue
-                Write-ColorOutput "   Output: $outputSizeMB MB (~$([math]::Round($outputSizeMB / $inputSizeMB, 1))x larger)" $Blue
-            }
 
                 return $true
             } else {
@@ -355,10 +444,12 @@ File sizes:
 }
 
 function Show-GUI {
+    # Adjusted GUI layout inspired by PowerShell GUI examples from [github.com](https://github.com/perplexityjeff/PowerShell-FFMPEG-MP4-Converter), [github.com](https://github.com/HP-97/Compressor), and [codeproject.com](https://www.codeproject.com/Articles/799161/Dealing-with-Powershell-Inputs-via-Basic-Windows-F). Path validation references [powershellgallery.com](https://www.powershellgallery.com/packages/DosInstallUtilities/2.7.127/Content/allcommands.ps1).
+
     # Create main form with dark theme
     $script:form = New-Object System.Windows.Forms.Form
-    $script:form.Text = "🎬 LoopVideo by @dedkamaroz 💎"
-    $script:form.Size = New-Object System.Drawing.Size(780, 580)
+    $script:form.Text = "Video Loop Creator"
+    $script:form.Size = New-Object System.Drawing.Size(800, 590)
     $script:form.StartPosition = "CenterScreen"
     $script:form.FormBorderStyle = "FixedDialog"
     $script:form.MaximizeBox = $false
@@ -368,11 +459,11 @@ function Show-GUI {
 
     # Title label
     $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = "🎬 EPIC SEAMLESS VIDEO LOOP CREATOR 🎬`n💎 Masterfully crafted by @dedkamaroz 💎"
-    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
+    $titleLabel.Text = "SEAMLESS VIDEO LOOP CREATOR"
+    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 18, [System.Drawing.FontStyle]::Bold)
     $titleLabel.ForeColor = [System.Drawing.Color]::FromArgb(220, 220, 220)
     $titleLabel.Location = New-Object System.Drawing.Point(30, 20)
-    $titleLabel.Size = New-Object System.Drawing.Size(720, 60)
+    $titleLabel.Size = New-Object System.Drawing.Size(720, 40)
     $titleLabel.TextAlign = "MiddleCenter"
     $titleLabel.BackColor = [System.Drawing.Color]::Transparent
     $script:form.Controls.Add($titleLabel)
@@ -382,7 +473,7 @@ function Show-GUI {
     $instructionsLabel.Text = "Choose your video file using any of the methods below:"
     $instructionsLabel.Font = New-Object System.Drawing.Font("Segoe UI", 11)
     $instructionsLabel.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
-    $instructionsLabel.Location = New-Object System.Drawing.Point(30, 90)
+    $instructionsLabel.Location = New-Object System.Drawing.Point(30, 65)
     $instructionsLabel.Size = New-Object System.Drawing.Size(720, 25)
     $instructionsLabel.TextAlign = "MiddleCenter"
     $instructionsLabel.BackColor = [System.Drawing.Color]::Transparent
@@ -390,18 +481,18 @@ function Show-GUI {
 
     # Drag and drop area
     $dropPanel = New-Object System.Windows.Forms.Panel
-    $dropPanel.Location = New-Object System.Drawing.Point(30, 125)
-    $dropPanel.Size = New-Object System.Drawing.Size(720, 120)
+    $dropPanel.Location = New-Object System.Drawing.Point(25, 125)
+    $dropPanel.Size = New-Object System.Drawing.Size(730, 150)
     $dropPanel.BorderStyle = "FixedSingle"
     $dropPanel.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 65)
     $dropPanel.AllowDrop = $true
 
     $dropLabel = New-Object System.Windows.Forms.Label
-    $dropLabel.Text = "DRAG & DROP VIDEO FILE HERE`n`nSupported formats: MP4, MOV, AVI, MKV, WEBM, M4V, FLV, WMV"
+    $dropLabel.Text = "DRAG & DROP VIDEO FILE HERE`n`nSupported formats:`nMP4, MOV, AVI, MKV, WEBM, M4V, FLV, WMV"
     $dropLabel.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
     $dropLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 150, 255)
-    $dropLabel.Location = New-Object System.Drawing.Point(10, 10)
-    $dropLabel.Size = New-Object System.Drawing.Size(670, 100)
+    $dropLabel.Location = New-Object System.Drawing.Point(10, 30)
+    $dropLabel.Size = New-Object System.Drawing.Size(710, 100)
     $dropLabel.TextAlign = "MiddleCenter"
     $dropLabel.BackColor = [System.Drawing.Color]::Transparent
     $dropPanel.Controls.Add($dropLabel)
@@ -432,7 +523,7 @@ function Show-GUI {
 
     $dropPanel.Add_DragLeave({
         $dropPanel.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 65)
-        $dropLabel.Text = "DRAG & DROP VIDEO FILE HERE`n`nSupported formats: MP4, MOV, AVI, MKV, WEBM, M4V, FLV, WMV"
+        $dropLabel.Text = "DRAG & DROP VIDEO FILE HERE`n`nSupported formats:`nMP4, MOV, AVI, MKV, WEBM, M4V, FLV, WMV"
     })
 
     $dropPanel.Add_DragDrop({
@@ -440,7 +531,7 @@ function Show-GUI {
         $files = $e.Data.GetData([System.Windows.Forms.DataFormats]::FileDrop)
         if ($files.Length -eq 1) {
             $dropPanel.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 65)
-            $dropLabel.Text = "DRAG & DROP VIDEO FILE HERE`n`nSupported formats: MP4, MOV, AVI, MKV, WEBM, M4V, FLV, WMV"
+            $dropLabel.Text = "DRAG & DROP VIDEO FILE HERE`n`nSupported formats:`nMP4, MOV, AVI, MKV, WEBM, M4V, FLV, WMV"
             Process-VideoFromGUI $files[0]
         }
     })
@@ -452,8 +543,8 @@ function Show-GUI {
     $orLabel.Text = "- OR -"
     $orLabel.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
     $orLabel.ForeColor = [System.Drawing.Color]::FromArgb(140, 140, 140)
-    $orLabel.Location = New-Object System.Drawing.Point(30, 235)
-    $orLabel.Size = New-Object System.Drawing.Size(690, 25)
+    $orLabel.Location = New-Object System.Drawing.Point(30, 290)
+    $orLabel.Size = New-Object System.Drawing.Size(720, 25)
     $orLabel.TextAlign = "MiddleCenter"
     $orLabel.BackColor = [System.Drawing.Color]::Transparent
     $script:form.Controls.Add($orLabel)
@@ -463,14 +554,14 @@ function Show-GUI {
     $pathLabel.Text = "Enter or paste file path:"
     $pathLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
     $pathLabel.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
-    $pathLabel.Location = New-Object System.Drawing.Point(30, 270)
+    $pathLabel.Location = New-Object System.Drawing.Point(30, 320)
     $pathLabel.Size = New-Object System.Drawing.Size(200, 25)
     $pathLabel.BackColor = [System.Drawing.Color]::Transparent
     $script:form.Controls.Add($pathLabel)
 
     $pathTextBox = New-Object System.Windows.Forms.TextBox
-    $pathTextBox.Location = New-Object System.Drawing.Point(30, 300)
-    $pathTextBox.Size = New-Object System.Drawing.Size(480, 25)
+    $pathTextBox.Location = New-Object System.Drawing.Point(30, 345)
+    $pathTextBox.Size = New-Object System.Drawing.Size(480, 28)
     $pathTextBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
     $pathTextBox.BackColor = [System.Drawing.Color]::FromArgb(70, 70, 75)
     $pathTextBox.ForeColor = [System.Drawing.Color]::FromArgb(220, 220, 220)
@@ -480,7 +571,7 @@ function Show-GUI {
     # Browse button
     $browseButton = New-Object System.Windows.Forms.Button
     $browseButton.Text = "Browse..."
-    $browseButton.Location = New-Object System.Drawing.Point(520, 298)
+    $browseButton.Location = New-Object System.Drawing.Point(520, 345)
     $browseButton.Size = New-Object System.Drawing.Size(90, 28)
     $browseButton.Font = New-Object System.Drawing.Font("Segoe UI", 10)
     $browseButton.BackColor = [System.Drawing.Color]::FromArgb(80, 80, 85)
@@ -501,8 +592,8 @@ function Show-GUI {
     # Process button
     $processButton = New-Object System.Windows.Forms.Button
     $processButton.Text = "CREATE LOOP"
-    $processButton.Location = New-Object System.Drawing.Point(620, 298)
-    $processButton.Size = New-Object System.Drawing.Size(100, 28)
+    $processButton.Location = New-Object System.Drawing.Point(620, 345)
+    $processButton.Size = New-Object System.Drawing.Size(120, 28)
     $processButton.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $processButton.BackColor = [System.Drawing.Color]::FromArgb(50, 150, 50)
     $processButton.ForeColor = [System.Drawing.Color]::White
@@ -517,21 +608,43 @@ function Show-GUI {
     })
     $script:form.Controls.Add($processButton)
 
-    # Enable dialogues checkbox (disabled by default)
-    $script:disableDialoguesCheckbox = New-Object System.Windows.Forms.CheckBox
-    $script:disableDialoguesCheckbox.Text = "Show processing completed dialogues"
-    $script:disableDialoguesCheckbox.Location = New-Object System.Drawing.Point(30, 340)
-    $script:disableDialoguesCheckbox.Size = New-Object System.Drawing.Size(350, 20)
-    $script:disableDialoguesCheckbox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $script:disableDialoguesCheckbox.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
-    $script:disableDialoguesCheckbox.BackColor = [System.Drawing.Color]::Transparent
-    $script:disableDialoguesCheckbox.Checked = $false  # Dialogues disabled by default
-    $script:form.Controls.Add($script:disableDialoguesCheckbox)
+    # Audio checkbox (disabled by default)
+    $script:includeAudioCheckbox = New-Object System.Windows.Forms.CheckBox
+    $script:includeAudioCheckbox.Text = "Include Audio"
+    $script:includeAudioCheckbox.Location = New-Object System.Drawing.Point(30, 385)
+    $script:includeAudioCheckbox.Size = New-Object System.Drawing.Size(120, 24)
+    $script:includeAudioCheckbox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $script:includeAudioCheckbox.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
+    $script:includeAudioCheckbox.BackColor = [System.Drawing.Color]::Transparent
+    $script:includeAudioCheckbox.Checked = $false  # Audio disabled by default
+    $script:form.Controls.Add($script:includeAudioCheckbox)
+
+    # Overwrite checkbox (enabled by default)
+    $script:overwriteFilesCheckbox = New-Object System.Windows.Forms.CheckBox
+    $script:overwriteFilesCheckbox.Text = "Overwrite existing files"
+    $script:overwriteFilesCheckbox.Location = New-Object System.Drawing.Point(180, 385)
+    $script:overwriteFilesCheckbox.Size = New-Object System.Drawing.Size(180, 24)
+    $script:overwriteFilesCheckbox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $script:overwriteFilesCheckbox.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
+    $script:overwriteFilesCheckbox.BackColor = [System.Drawing.Color]::Transparent
+    $script:overwriteFilesCheckbox.Checked = $true  # Overwrite enabled by default
+    $script:form.Controls.Add($script:overwriteFilesCheckbox)
+
+    # Show dialogues checkbox (disabled by default)
+    $script:showDialoguesCheckbox = New-Object System.Windows.Forms.CheckBox
+    $script:showDialoguesCheckbox.Text = "Show completion dialogues"
+    $script:showDialoguesCheckbox.Location = New-Object System.Drawing.Point(390, 385)
+    $script:showDialoguesCheckbox.Size = New-Object System.Drawing.Size(200, 24)
+    $script:showDialoguesCheckbox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $script:showDialoguesCheckbox.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
+    $script:showDialoguesCheckbox.BackColor = [System.Drawing.Color]::Transparent
+    $script:showDialoguesCheckbox.Checked = $false  # Dialogues disabled by default
+    $script:form.Controls.Add($script:showDialoguesCheckbox)
 
     # Progress bar
     $script:progressBar = New-Object System.Windows.Forms.ProgressBar
-    $script:progressBar.Location = New-Object System.Drawing.Point(30, 370)
-    $script:progressBar.Size = New-Object System.Drawing.Size(690, 25)
+    $script:progressBar.Location = New-Object System.Drawing.Point(30, 420)
+    $script:progressBar.Size = New-Object System.Drawing.Size(720, 25)
     $script:progressBar.Style = "Continuous"
     $script:progressBar.BackColor = [System.Drawing.Color]::FromArgb(70, 70, 75)
     $script:progressBar.ForeColor = [System.Drawing.Color]::FromArgb(100, 150, 255)
@@ -542,33 +655,17 @@ function Show-GUI {
     $script:statusLabel.Text = "Ready to process video files..."
     $script:statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
     $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
-    $script:statusLabel.Location = New-Object System.Drawing.Point(30, 405)
-    $script:statusLabel.Size = New-Object System.Drawing.Size(690, 25)
+    $script:statusLabel.Location = New-Object System.Drawing.Point(30, 455)
+    $script:statusLabel.Size = New-Object System.Drawing.Size(720, 30)
     $script:statusLabel.TextAlign = "MiddleCenter"
     $script:statusLabel.BackColor = [System.Drawing.Color]::Transparent
     $script:form.Controls.Add($script:statusLabel)
 
-    # Process another and exit buttons
-    $processAnotherButton = New-Object System.Windows.Forms.Button
-    $processAnotherButton.Text = "Process Another Video"
-    $processAnotherButton.Location = New-Object System.Drawing.Point(200, 450)
-    $processAnotherButton.Size = New-Object System.Drawing.Size(200, 35)
-    $processAnotherButton.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $processAnotherButton.BackColor = [System.Drawing.Color]::FromArgb(70, 130, 180)
-    $processAnotherButton.ForeColor = [System.Drawing.Color]::White
-    $processAnotherButton.FlatStyle = "Flat"
-    $processAnotherButton.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(90, 150, 200)
-    $processAnotherButton.Add_Click({
-        $pathTextBox.Text = ""
-        $script:progressBar.Value = 0
-        Update-GUIStatus "Ready to process another video..." ([System.Drawing.Color]::FromArgb(180, 180, 180))
-    })
-    $script:form.Controls.Add($processAnotherButton)
-
+    # Exit button
     $exitButton = New-Object System.Windows.Forms.Button
     $exitButton.Text = "Exit"
-    $exitButton.Location = New-Object System.Drawing.Point(420, 450)
-    $exitButton.Size = New-Object System.Drawing.Size(100, 35)
+    $exitButton.Location = New-Object System.Drawing.Point(330, 495)
+    $exitButton.Size = New-Object System.Drawing.Size(120, 35)
     $exitButton.Font = New-Object System.Drawing.Font("Segoe UI", 10)
     $exitButton.BackColor = [System.Drawing.Color]::FromArgb(180, 70, 70)
     $exitButton.ForeColor = [System.Drawing.Color]::White
@@ -590,38 +687,33 @@ function Process-VideoFromGUI {
     $script:progressBar.Value = 0
     Update-GUIStatus "Starting processing..." ([System.Drawing.Color]::FromArgb(100, 150, 255))
 
-    $success = Process-VideoFile -InputPath $FilePath -IsGUIMode $true -QualityPreset $Quality
+    # Get checkbox values
+    $includeAudio = $script:includeAudioCheckbox -and $script:includeAudioCheckbox.Checked
+    $overwriteFiles = $script:overwriteFilesCheckbox -and $script:overwriteFilesCheckbox.Checked
+
+    $success = Process-VideoFile -InputPath $FilePath -IsGUIMode $true -QualityPreset $Quality -IncludeAudio $includeAudio -OverwriteExisting $overwriteFiles
 
     if ($success) {
-        if ($script:disableDialoguesCheckbox -and $script:disableDialoguesCheckbox.Checked) {
-            $result = [System.Windows.Forms.MessageBox]::Show(
-                "Video processed successfully!`n`nWould you like to process another video?",
-                "Success!",
-                "YesNo",
-                "Question"
-            )
-
-            if ($result -eq "Yes") {
-                $script:progressBar.Value = 0
-                Update-GUIStatus "Ready to process another video..." ([System.Drawing.Color]::FromArgb(180, 180, 180))
-            } else {
-                $script:form.Close()
-            }
-        } else {
-            # Default behavior: stay open and ready for next video (no popup)
-            $script:progressBar.Value = 0
-            Update-GUIStatus "Ready to process another video..." ([System.Drawing.Color]::FromArgb(180, 180, 180))
-        }
+        # Reset for next video
+        $script:progressBar.Value = 0
+        Update-GUIStatus "Ready to process video files..." ([System.Drawing.Color]::FromArgb(180, 180, 180))
     }
 }
 
 # Main execution logic
-Write-ColorOutput "🎬 LOOPVIDEO - EPIC SEAMLESS LOOP CREATOR 🎬" $Cyan
-Write-ColorOutput "💎 Masterfully crafted by @dedkamaroz 💎" $Magenta
-Write-ColorOutput "=============================================" $Cyan
+# Determine execution mode first to control output
+$isGUIMode = ($GUI -or [string]::IsNullOrEmpty($InputFile))
+
+# Only show console output in CLI mode
+if (-not $isGUIMode) {
+    Write-ColorOutput "LOOPVIDEO - SEAMLESS LOOP CREATOR" $Cyan
+    Write-ColorOutput "=====================================" $Cyan
+}
 
 # Check if FFmpeg is available
-Write-ColorOutput "[INFO] Checking FFmpeg availability..." $Blue
+if (-not $isGUIMode) {
+    Write-ColorOutput "[INFO] Checking FFmpeg availability..." $Blue
+}
 if (-not (Test-FFmpegAvailable)) {
     $errorMsg = @"
 FFmpeg not found in PATH!
@@ -636,19 +728,23 @@ For Windows users:
 4. Restart PowerShell/Command Prompt
 "@
 
-    if ($GUI -or [string]::IsNullOrEmpty($InputFile)) {
+    if ($isGUIMode) {
         [System.Windows.Forms.MessageBox]::Show($errorMsg, "FFmpeg Required", "OK", "Error")
     } else {
         Write-ColorOutput "[ERROR] $errorMsg" $Red
     }
     exit 1
 }
-Write-ColorOutput "[OK] FFmpeg found and ready" $Green
+if (-not $isGUIMode) {
+    Write-ColorOutput "[OK] FFmpeg found and ready" $Green
+}
 
 # Determine execution mode
-if ($GUI -or [string]::IsNullOrEmpty($InputFile)) {
+if ($isGUIMode) {
     # GUI Mode - either explicitly requested or no input file provided
-    Write-ColorOutput "[INFO] Starting GUI mode..." $Blue
+    if (-not $isGUIMode) {
+        Write-ColorOutput "[INFO] Starting GUI mode..." $Blue
+    }
     Show-GUI
 } else {
     # Command-line mode
